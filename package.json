@@ -1,0 +1,25 @@
+{
+  "name": "route2postman",
+  "version": "0.1.0",
+  "description": "Framework-agnostic CLI that auto-detects your project's API framework and generates a Postman collection from your route definitions.",
+  "bin": {
+    "route2postman": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "glob": "^11.0.1",
+    "postman-collection": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "@types/postman-collection": "^3.5.11",
+    "typescript": "^5.8.3"
+  }
+}
