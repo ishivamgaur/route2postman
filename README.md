@@ -1,205 +1,98 @@
 # route2postman
 
-Generate a ready-to-import Postman collection from backend route definitions.
+Generate a Postman collection from backend routes.
 
-`route2postman` is a framework-aware TypeScript CLI that scans a backend project, detects the API framework, extracts routes, enriches each endpoint with request metadata, and writes a Postman Collection JSON file.
+`route2postman` scans your API project, detects the framework, finds routes, adds useful request details, and saves a `postman_collection.json` file that you can import into Postman.
 
-It is designed for developers who want a fast API testing collection without manually rebuilding every route in Postman.
+## Install
 
-## Table of Contents
+Run without installing:
 
-- [Why This Exists](#why-this-exists)
-- [What It Does](#what-it-does)
-- [Supported Frameworks](#supported-frameworks)
-- [Quick Start](#quick-start)
-- [CLI Usage](#cli-usage)
-- [Collection Naming](#collection-naming)
-- [Import Into Postman](#import-into-postman)
-- [Example](#example)
-- [Architecture](#architecture)
-- [Data Flow](#data-flow)
-- [Project Structure](#project-structure)
-- [How Route Inference Works](#how-route-inference-works)
-- [Core Data Model](#core-data-model)
-- [Development](#development)
-- [Publishing as an npm Package](#publishing-as-an-npm-package)
-- [Limitations](#limitations)
-- [Roadmap](#roadmap)
+```bash
+npx route2postman .
+```
 
-## Why This Exists
+Or install globally:
 
-Backend routes usually live in source code, while Postman collections are often maintained by hand. That creates a common problem:
-
-- Routes change, but the Postman collection does not.
-- Developers repeat the same API setup work again and again.
-- New team members need to inspect code manually before testing endpoints.
-- API collections become incomplete, outdated, or inconsistent.
-
-`route2postman` solves this by using the backend code as the source of truth. It reads route declarations directly from the project and generates a Postman collection that can be imported and used immediately.
-
-## What It Does
-
-`route2postman` can:
-
-- Detect the backend framework automatically.
-- Extract route methods and paths.
-- Convert framework-specific path params into Postman variables.
-- Infer query params, headers, auth, and JSON request bodies where possible.
-- Generate useful sample body values from field names.
-- Group endpoints into Postman folders by resource.
-- Generate collection variables such as `base_url`, `token`, and `api_key`.
-- Let you force a framework parser when auto-detection is not enough.
-
-The output is a standard Postman Collection v2.1 JSON file.
-
-## Supported Frameworks
-
-| Framework | Detection Signals | Route Extraction | Inference Support |
-| --- | --- | --- | --- |
-| Express.js | `package.json`, imports, `express()`, routers | Good | Body, query, params, headers, auth |
-| Hono | `package.json`, imports, `new Hono()` | Good | Body, query, params, headers, auth |
-| FastAPI | `requirements.txt`, `pyproject.toml`, imports, decorators | Good | Pydantic models, query, headers, auth |
-| Flask | Python dependency files, imports, decorators | Good | Body, query, headers, auth |
-| Django | Python dependency files, `manage.py`, `urls.py` | Basic | Path params |
-| Gin | `go.mod`, imports, router calls | Good | JSON tags, query, params, headers, auth |
+```bash
+npm install -g route2postman
+route2postman .
+```
 
 ## Quick Start
 
-Install dependencies:
+From inside your backend project:
 
 ```bash
-npm install
+route2postman .
 ```
 
-Build the CLI:
-
-```bash
-npm run build
-```
-
-Generate a Postman collection from a backend project:
-
-```bash
-node dist/index.js ../my-api
-```
-
-By default, the collection is written to:
+This creates:
 
 ```text
-../my-api/postman_collection.json
+postman_collection.json
 ```
 
-The Postman collection name defaults to the scanned directory name. For example, scanning `../billing-api` creates a collection named `billing-api`.
+Import that file into Postman.
 
-## CLI Usage
+## Common Usage
 
-Scan the current directory:
-
-```bash
-node dist/index.js .
-```
-
-Scan a different project:
-
-```bash
-node dist/index.js ../my-api
-```
-
-Write the collection to a custom file:
-
-```bash
-node dist/index.js ../my-api --output my-api.postman_collection.json
-```
-
-Set the default Postman base URL:
-
-```bash
-node dist/index.js ../my-api --base-url http://localhost:8000
-```
-
-Set the Postman collection name:
-
-```bash
-node dist/index.js ../my-api --name "Billing API"
-```
-
-Force a specific framework parser:
-
-```bash
-node dist/index.js ../my-api --framework FastAPI
-```
-
-List supported frameworks:
-
-```bash
-node dist/index.js --list-frameworks
-```
-
-After the package is published, the intended command will be:
+Scan another project:
 
 ```bash
 route2postman ../my-api
 ```
 
-## Collection Naming
-
-The generated Postman collection no longer uses a generic name like `Express.js API (auto-generated)` by default.
-
-Naming works like this:
-
-| Input | Collection Name |
-| --- | --- |
-| `node dist/index.js ../billing-api` | `billing-api` |
-| `node dist/index.js ../my-api --name "My API"` | `My API` |
-| `route2postman . --name "Local API"` | `Local API` |
-
-The output file still saves to the scanned project directory by default:
-
-```text
-<scanned-project>/postman_collection.json
-```
-
-Use `--output` only when you want to write the JSON somewhere else.
-
-## Import Into Postman
-
-1. Generate the collection:
+Set the Postman collection name:
 
 ```bash
-node dist/index.js ../my-api
+route2postman ../my-api --name "Billing API"
 ```
 
-2. Open Postman.
-3. Click `Import`.
-4. Select the generated `postman_collection.json` file.
-5. Confirm the import.
-6. Open the imported collection.
-7. Go to the collection `Variables` tab.
-8. Set values for variables such as:
+Write to a custom file:
 
-| Variable | Purpose |
-| --- | --- |
-| `base_url` | API server URL, for example `http://localhost:3000` |
-| `token` | Bearer token for protected endpoints |
-| `api_key` | API key used by inferred API key headers |
-
-Generated request URLs use `{{base_url}}`, so you can switch environments by changing one collection variable.
-
-## Example
-
-Given this Express route:
-
-```ts
-app.post('/users/:id', requireAuth, (req, res) => {
-  const { name, email, password } = req.body;
-  const page = req.query.page;
-  const traceId = req.get('x-trace-id');
-
-  res.json({ ok: true });
-});
+```bash
+route2postman ../my-api --output billing.postman_collection.json
 ```
 
-`route2postman` can generate a Postman request like this:
+Override the detected base URL:
+
+```bash
+route2postman ../my-api --base-url http://localhost:8000
+```
+
+Force a framework:
+
+```bash
+route2postman ../my-api --framework FastAPI
+```
+
+Use guided prompts:
+
+```bash
+route2postman --interactive
+```
+
+List supported frameworks:
+
+```bash
+route2postman --list-frameworks
+```
+
+## What It Generates
+
+The generated Postman collection can include:
+
+- Route method and path
+- Postman folders by resource
+- `base_url` collection variable
+- Path variables like `:id`
+- Query params
+- JSON body examples when body fields are detected
+- Headers such as `Authorization`, `Content-Type`, and API keys
+- Auth variables like `token` and `api_key`
+
+Example:
 
 ```text
 POST {{base_url}}/users/:id?page=
@@ -209,7 +102,6 @@ Headers:
 
 ```text
 Authorization: Bearer {{token}}
-X-Trace-Id: {{x_trace_id}}
 Content-Type: application/json
 ```
 
@@ -218,453 +110,114 @@ Body:
 ```json
 {
   "name": "Example Name",
-  "email": "user@example.com",
-  "password": "password123"
+  "email": "user@example.com"
 }
 ```
 
-The route is also placed inside a `Users` folder in the generated Postman collection.
+## Import Into Postman
+
+1. Run `route2postman`.
+2. Open Postman.
+3. Click `Import`.
+4. Select `postman_collection.json`.
+5. Open the collection variables.
+6. Set values like `base_url`, `token`, or `api_key`.
+
+## Supported Frameworks
+
+| Framework | Route Detection | Request Inference |
+| --- | --- | --- |
+| Express.js | Yes | Body, query, params, headers, auth |
+| Hono | Yes | Body, query, params, headers, auth |
+| FastAPI | Yes | Pydantic models, query, headers, auth |
+| Flask | Yes | Body, query, headers, auth |
+| Django | Basic | Path params |
+| Gin | Yes | JSON tags, query, params, headers, auth |
+
+## Base URL Detection
+
+If you do not pass `--base-url`, the CLI tries to detect it from:
+
+- `.env` files
+- `BASE_URL`, `API_URL`, `SERVER_URL`, `APP_URL`
+- `HOST` and `PORT`
+- package scripts with `--port`
+- `app.listen(...)`
+- Flask `app.run(port=...)`
+- Uvicorn or FastAPI run config
+- Gin `Run(":8080")`
+
+Fallback:
+
+```text
+http://localhost:3000
+```
 
 ## Architecture
 
-`route2postman` uses a pipeline architecture. The CLI coordinates the flow, framework-specific modules parse the backend code, and the generator produces a standard Postman collection.
-
-```mermaid
-flowchart TD
-    A["Backend Project<br/>Express / FastAPI / Flask / Django / Hono / Gin"] --> B["CLI<br/>src/index.ts"]
-    B --> C{"Framework selected?"}
-    C -->|"--framework provided"| D["Use forced parser"]
-    C -->|"auto-detect"| E["Framework Detection<br/>src/detectors/*"]
-    E --> F["Best framework match<br/>confidence score"]
-    D --> G["Route Parser<br/>src/parsers/*"]
-    F --> G
-    G --> H["Normalized routes<br/>RouteInfo[]"]
-    H --> I["Route Inference<br/>src/utils/inference.ts"]
-    I --> J["Enriched routes<br/>params, query, body, headers, auth"]
-    J --> K["Postman Generator<br/>src/generators/postman.ts"]
-    K --> L["Postman Collection JSON<br/>postman_collection.json"]
+```text
+Backend project
+   |
+   v
+Framework detector
+   |
+   v
+Framework parser
+   |
+   v
+Route inference
+   |
+   v
+Postman generator
+   |
+   v
+postman_collection.json
 ```
 
-### System Components
-
-```mermaid
-flowchart LR
-    subgraph CLI["CLI Layer"]
-        CLI_ENTRY["src/index.ts<br/>Options, scan path, output path"]
-    end
-
-    subgraph DETECTORS["Detection Layer"]
-        DETECTOR_INDEX["detectors/index.ts"]
-        EXPRESS_D["express.ts"]
-        FASTAPI_D["fastapi.ts"]
-        FLASK_D["flask.ts"]
-        DJANGO_D["django.ts"]
-        HONO_D["hono.ts"]
-        GIN_D["gin.ts"]
-    end
-
-    subgraph PARSERS["Parser Layer"]
-        EXPRESS_P["express.ts"]
-        FASTAPI_P["fastapi.ts"]
-        FLASK_P["flask.ts"]
-        DJANGO_P["django.ts"]
-        HONO_P["hono.ts"]
-        GIN_P["gin.ts"]
-    end
-
-    subgraph UTILS["Shared Utilities"]
-        PROJECT["utils/project.ts<br/>file scanning helpers"]
-        INFERENCE["utils/inference.ts<br/>request metadata inference"]
-    end
-
-    subgraph OUTPUT["Output Layer"]
-        POSTMAN["generators/postman.ts<br/>Postman Collection v2.1"]
-    end
-
-    CLI_ENTRY --> DETECTOR_INDEX
-    DETECTOR_INDEX --> EXPRESS_D
-    DETECTOR_INDEX --> FASTAPI_D
-    DETECTOR_INDEX --> FLASK_D
-    DETECTOR_INDEX --> DJANGO_D
-    DETECTOR_INDEX --> HONO_D
-    DETECTOR_INDEX --> GIN_D
-    DETECTOR_INDEX --> EXPRESS_P
-    DETECTOR_INDEX --> FASTAPI_P
-    DETECTOR_INDEX --> FLASK_P
-    DETECTOR_INDEX --> DJANGO_P
-    DETECTOR_INDEX --> HONO_P
-    DETECTOR_INDEX --> GIN_P
-    DETECTOR_INDEX --> PROJECT
-    EXPRESS_P --> INFERENCE
-    FASTAPI_P --> INFERENCE
-    FLASK_P --> INFERENCE
-    DJANGO_P --> INFERENCE
-    HONO_P --> INFERENCE
-    GIN_P --> INFERENCE
-    INFERENCE --> POSTMAN
-```
-
-### 1. CLI Layer
-
-File: `src/index.ts`
-
-The CLI is the orchestration layer. It parses command-line options, resolves the target directory, chooses a framework, prints a route summary, and writes the final collection file.
-
-Responsibilities:
-
-- Read CLI arguments.
-- Resolve the backend project path.
-- Run framework detection unless `--framework` is provided.
-- Call the selected route parser.
-- Pass parsed routes into the Postman generator.
-- Write the final JSON file.
-
-### 2. Framework Detection Layer
-
-Folder: `src/detectors`
-
-Each framework has a detector that returns a confidence score. The framework with the highest score is selected.
-
-Detection uses two signal types:
-
-| Signal Type | Examples |
-| --- | --- |
-| Dependency files | `package.json`, `requirements.txt`, `pyproject.toml`, `go.mod` |
-| Source signatures | `express()`, `FastAPI()`, `@app.route`, `urlpatterns`, `gin.Default()` |
-
-This makes detection work even when dependency files are incomplete but source code clearly shows the framework.
-
-### 3. Parser Layer
-
-Folder: `src/parsers`
-
-Each parser understands one framework's route syntax and converts it into a shared `RouteInfo` shape.
-
-Examples:
-
-| Framework | Route Syntax |
-| --- | --- |
-| Express | `app.get('/users', handler)` |
-| Hono | `app.post('/users', handler)` |
-| FastAPI | `@app.post("/users")` |
-| Flask | `@app.route("/users", methods=["POST"])` |
-| Django | `path("users/", views.users)` |
-| Gin | `router.POST("/users", handler)` |
-
-Parsers do not generate Postman JSON directly. They only produce normalized route data.
-
-### 4. Inference Layer
-
-File: `src/utils/inference.ts`
-
-The inference layer enriches each route with request details. It is intentionally framework-aware but output-agnostic.
-
-It can infer:
-
-- Path params
-- Query params
-- Request body fields
-- Headers
-- Auth requirements
-- Sample values
-
-This layer keeps parser files smaller and makes inference behavior reusable across frameworks.
-
-### 5. Generator Layer
-
-File: `src/generators/postman.ts`
-
-The generator converts normalized routes into a Postman Collection v2.1 document.
-
-It handles:
-
-- Collection metadata
-- Request URLs
-- Path variables
-- Query parameters
-- Headers
-- JSON request bodies
-- Collection variables
-- Folder grouping
-
-## Data Flow
-
-The internal data model becomes richer as it moves through the pipeline:
-
-```mermaid
-flowchart TD
-    A["Source files<br/>package.json, routes.ts, main.py, urls.py, go.mod"] --> B["Detection result<br/>{ name, confidence, parser }"]
-    B --> C["Raw route match<br/>method + framework path"]
-    C --> D["RouteInfo<br/>method, path, name"]
-    D --> E["Enriched RouteInfo<br/>params, queryParams, body, headers, auth"]
-    E --> F["Postman request item<br/>URL, variables, headers, body"]
-    F --> G["Postman folder grouping<br/>Users, Posts, Auth, etc."]
-    G --> H["Collection variables<br/>base_url, token, api_key"]
-    H --> I["Postman Collection v2.1 JSON"]
-```
-
-The important design decision is that every parser returns the same `RouteInfo` interface. This allows new frameworks to be added without changing the Postman generator.
-
-### Route Enrichment Flow
-
-```mermaid
-flowchart LR
-    A["Handler source"] --> B["Path params<br/>:id, {id}, <int:id>"]
-    A --> C["Query params<br/>req.query.page<br/>request.args.get"]
-    A --> D["Body fields<br/>req.body.email<br/>Pydantic BaseModel<br/>json tags"]
-    A --> E["Headers<br/>Authorization<br/>x-api-key"]
-    A --> F["Auth signals<br/>auth, jwt, token,<br/>Depends, middleware"]
-
-    B --> G["Enriched RouteInfo"]
-    C --> G
-    D --> G
-    E --> G
-    F --> G
-    G --> H["Postman request"]
-```
-
-## Project Structure
+Core folders:
 
 ```text
-route2postman/
-  src/
-    detectors/
-      django.ts
-      express.ts
-      fastapi.ts
-      flask.ts
-      gin.ts
-      hono.ts
-      index.ts
-    parsers/
-      django.ts
-      express.ts
-      fastapi.ts
-      flask.ts
-      gin.ts
-      hono.ts
-      index.ts
-    generators/
-      postman.ts
-    utils/
-      inference.ts
-      project.ts
-    index.ts
-    types.ts
-  package.json
-  tsconfig.json
-  README.md
+src/
+  detectors/    framework detection
+  parsers/      route extraction
+  utils/        inference and project scanning
+  generators/   Postman JSON generation
+  index.ts      CLI entry
 ```
 
-## How Route Inference Works
+## How It Works
 
-The first implementation uses static source-code analysis with framework-specific patterns. It does not run the target backend.
+1. Detects the framework using dependency files and source-code signals.
+2. Parses routes into a shared `RouteInfo` format.
+3. Infers request details from handler code.
+4. Converts the normalized routes into Postman Collection v2.1 JSON.
 
-### Express.js
-
-| Code Pattern | Inferred Postman Data |
-| --- | --- |
-| `req.body.email` | JSON body field `email` |
-| `{ name } = req.body` | JSON body field `name` |
-| `req.query.page` | Query param `page` |
-| `req.params.id` | Path param `id` |
-| `req.get('x-api-key')` | Header `X-Api-Key` |
-| `auth`, `jwt`, `token` usage | `Authorization` header |
-
-### FastAPI
-
-| Code Pattern | Inferred Postman Data |
-| --- | --- |
-| `class User(BaseModel)` | JSON body model |
-| `email: str` | Body field `email` |
-| `age: int` | Body field `age` with numeric example |
-| `Header(...)` | Header |
-| `Depends(...)` | Possible auth |
-| `/users/{user_id}` | Path variable `user_id` |
-
-### Flask
-
-| Code Pattern | Inferred Postman Data |
-| --- | --- |
-| `request.json.get("email")` | JSON body field `email` |
-| `request.args.get("page")` | Query param `page` |
-| `request.headers.get("Authorization")` | Header |
-
-### Gin
-
-| Code Pattern | Inferred Postman Data |
-| --- | --- |
-| `` json:"email" `` | JSON body field `email` |
-| `c.Query("page")` | Query param `page` |
-| `c.Param("id")` | Path param `id` |
-| `c.GetHeader("Authorization")` | Header |
-
-### Sample Value Generation
-
-Sample values are generated from field names and types:
-
-| Field | Example |
-| --- | --- |
-| `email` | `user@example.com` |
-| `password` | `password123` |
-| `name` | `Example Name` |
-| `age` | `1` |
-| `isActive` | `true` |
-| `description` | `Example description` |
-
-## Core Data Model
-
-All framework parsers return this shared shape:
-
-```ts
-export interface RouteInfo {
-  method: string;
-  path: string;
-  name?: string;
-  description?: string;
-  params?: { name: string; type: string; required: boolean }[];
-  queryParams?: { name: string; type: string; required: boolean }[];
-  body?: unknown;
-  headers?: Record<string, string>;
-  auth?: boolean;
-}
-```
-
-This model separates framework parsing from collection generation. A parser only needs to produce `RouteInfo`; the generator handles the Postman-specific output.
-
-## Development
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Build:
-
-```bash
-npm run build
-```
-
-Run in watch mode:
-
-```bash
-npm run dev
-```
-
-Run the compiled CLI:
-
-```bash
-node dist/index.js .
-```
-
-Run against another backend:
-
-```bash
-node dist/index.js ../my-api --base-url http://localhost:3000
-```
-
-## Publishing as an npm Package
-
-The package is configured with a CLI binary:
-
-```json
-{
-  "bin": {
-    "route2postman": "./dist/index.js"
-  }
-}
-```
-
-That means users can run this command after the package is installed:
-
-```bash
-route2postman ../my-api
-```
-
-Before publishing, build and inspect the package contents:
-
-```bash
-npm run build
-npm run pack:dry-run
-```
-
-The `files` field in `package.json` ensures the published package includes the compiled `dist` directory and the README.
-
-To test the CLI locally before publishing:
-
-```bash
-npm link
-route2postman . --name "route2postman"
-```
-
-To publish publicly:
-
-```bash
-npm login
-npm publish --access public
-```
-
-After publishing, users can install globally:
-
-```bash
-npm install -g route2postman
-route2postman ../my-api
-```
-
-Or run it without a global install:
-
-```bash
-npx route2postman ../my-api
-```
-
-## Adding a New Framework
-
-To add another framework:
-
-1. Add a detector in `src/detectors/<framework>.ts`.
-2. Add a parser in `src/parsers/<framework>.ts`.
-3. Register both in `src/detectors/index.ts`.
-4. Register the parser in `src/parsers/index.ts` if needed by future APIs.
-5. Return normalized `RouteInfo[]` from the parser.
-6. Add inference helpers in `src/utils/inference.ts` if the framework has request metadata patterns.
-
-The Postman generator should not need framework-specific changes.
+The analysis is static. It does not run your backend.
 
 ## Limitations
 
-`route2postman` is currently a static analyzer. That gives it speed and portability, but it also means:
-
-- Highly dynamic routes may be missed.
-- Deeply abstracted routers may need extra parser support.
+- Very dynamic routes may be missed.
+- Deeply nested routers may need better parser support.
 - Inference is best-effort, not a guaranteed API contract.
-- Django support is currently basic and should be improved for Django REST Framework.
-- Response schemas and status codes are not inferred yet.
-- OpenAPI export is not implemented yet.
+- Django REST Framework support is still basic.
+- OpenAPI export is not available yet.
 
-Generated collections should be treated as a strong starting point that developers can refine in Postman.
+## Development
 
-## Roadmap
-
-Planned improvements:
-
-- Add fixture-based tests for every supported framework.
-- Add OpenAPI 3.1 export.
-- Add AST-based parsing for JavaScript, TypeScript, Python, and Go where useful.
-- Improve nested router support.
-- Improve Django REST Framework serializer and viewset support.
-- Infer response examples and status codes.
-- Generate optional Postman environments.
-- Generate optional Postman test scripts.
-- Add route filtering by method, path, or framework.
-- Add `--format postman|openapi`.
-
-## Status
-
-This project is in an early but working stage. The core pipeline is implemented:
-
-```text
-detect framework -> parse routes -> infer request details -> generate Postman collection
+```bash
+git clone https://github.com/ishivamgaur/route2postman.git
+cd route2postman
+npm install
+npm run build
+node dist/index.js .
 ```
 
-The next priority is improving accuracy with real fixture projects and tests for each supported framework.
+Run a package dry run:
+
+```bash
+npm run pack:dry-run
+```
+
+## License
+
+MIT
