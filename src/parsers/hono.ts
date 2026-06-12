@@ -3,15 +3,17 @@ import { join } from 'path';
 import { glob } from 'glob';
 import { RouteParser, RouteInfo } from '../types.js';
 import { enrichRoute, extractCallExpression, inferHonoEnrichment } from '../utils/inference.js';
+import { DEFAULT_IGNORES, sortRoutes } from '../utils/project.js';
 
 const ROUTE_PATTERN = /app\.(get|post|put|delete|patch|options)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
 
 export const honoParser: RouteParser = {
   name: 'Hono',
   async parse(projectDir: string): Promise<RouteInfo[]> {
+    const seen = new Set<string>();
     const routes: RouteInfo[] = [];
     const pattern = join(projectDir, '**/*.{js,ts,jsx,tsx}').replace(/\\/g, '/');
-    const files = await glob(pattern, { ignore: '**/node_modules/**' });
+    const files = await glob(pattern, { ignore: DEFAULT_IGNORES });
 
     for (const file of files) {
       try {
@@ -21,6 +23,9 @@ export const honoParser: RouteParser = {
           const method = match[1].toUpperCase();
           let path = match[2];
           if (!path.startsWith('/')) path = '/' + path;
+          const key = `${method}:${path}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
           const callSource = extractCallExpression(content, match.index);
           routes.push(enrichRoute(
             { method, path },
@@ -30,6 +35,6 @@ export const honoParser: RouteParser = {
       } catch { /* ignore */ }
     }
 
-    return routes;
+    return sortRoutes(routes);
   },
 };

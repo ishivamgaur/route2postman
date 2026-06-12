@@ -1,8 +1,9 @@
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, basename } from 'path';
 import { glob } from 'glob';
 import { RouteParser, RouteInfo } from '../types.js';
 import { enrichRoute, extractCallExpression, inferExpressLikeEnrichment, splitTopLevel } from '../utils/inference.js';
+import { DEFAULT_IGNORES, sortRoutes } from '../utils/project.js';
 
 function findEntryFile(projectDir: string): string | null {
   const pkgPath = join(projectDir, 'package.json');
@@ -97,7 +98,11 @@ function parseMounts(content: string): Map<string, string> {
   return mounts;
 }
 
-function resolveRoutesInFile(filePath: string, basePath: string): RouteInfo[] {
+function routeLikeName(filePath: string): string {
+  return basename(filePath).replace(/\.(?:js|ts|jsx|tsx)$/i, '').replace(/[-_.]?routes?$/i, '').toLowerCase();
+}
+
+function resolveRoutesInFile(filePath: string, basePath = ''): RouteInfo[] {
   const seen = new Set<string>();
   const routes: RouteInfo[] = [];
   try {
@@ -204,49 +209,60 @@ function normalizePath(base: string, rel: string): string {
   return baseClean + rel;
 }
 
+async function collectSourceFiles(projectDir: string): Promise<string[]> {
+  const pattern = join(projectDir, '**/*.{js,ts,jsx,tsx}').replace(/\\/g, '/');
+  return glob(pattern, { ignore: DEFAULT_IGNORES });
+}
+
+function addRoutes(allRoutes: Map<string, RouteInfo>, routes: RouteInfo[]): void {
+  for (const route of routes) {
+    const key = `${route.method}:${route.path}`;
+    if (!allRoutes.has(key)) allRoutes.set(key, route);
+  }
+}
+
 export const expressParser: RouteParser = {
   name: 'Express.js',
   async parse(projectDir: string): Promise<RouteInfo[]> {
     const allRoutes = new Map<string, RouteInfo>();
-
     const entryFile = findEntryFile(projectDir);
+    const sourceFiles = await collectSourceFiles(projectDir);
+    const mountPrefixesByFile = new Map<string, string>();
 
-    if (!entryFile) {
-      const pattern = join(projectDir, '**/*.{js,ts}').replace(/\\/g, '/');
-      const files = await glob(pattern, { ignore: '**/node_modules/**' });
-      for (const file of files) {
-        if (file.includes('node_modules')) continue;
-        for (const r of resolveRoutesInFile(file, '')) {
-          const key = `${r.method}:${r.path}`;
-          if (!allRoutes.has(key)) allRoutes.set(key, r);
-        }
-      }
-      return [...allRoutes.values()];
-    }
+    if (entryFile) {
+      const entryContent = readFileSync(entryFile, 'utf-8');
+      const entryDir = dirname(entryFile);
+      const imports = parseImports(entryContent, entryDir);
+      const mountVarToPrefix = parseMounts(entryContent);
 
-    const entryContent = readFileSync(entryFile, 'utf-8');
-    const entryDir = dirname(entryFile);
-
-    const imports = parseImports(entryContent, entryDir);
-    const mountVarToPrefix = parseMounts(entryContent);
-
-    for (const [varName, filePath] of imports) {
-      if (existsSync(filePath) && mountVarToPrefix.has(varName)) {
-        const prefix = mountVarToPrefix.get(varName)!;
-        const fileRoutes = resolveRoutesInFile(filePath, prefix);
-        for (const r of fileRoutes) {
-          const key = `${r.method}:${r.path}`;
-          if (!allRoutes.has(key)) allRoutes.set(key, r);
+      for (const [varName, filePath] of imports) {
+        if (existsSync(filePath) && mountVarToPrefix.has(varName)) {
+          mountPrefixesByFile.set(filePath, mountVarToPrefix.get(varName)!);
         }
       }
     }
 
-    const entryRoutes = resolveRoutesInFile(entryFile, '');
-    for (const r of entryRoutes) {
-      const key = `${r.method}:${r.path}`;
-      if (!allRoutes.has(key)) allRoutes.set(key, r);
+    for (const file of sourceFiles) {
+      const mountedPrefix = mountPrefixesByFile.get(file);
+      const routes = resolveRoutesInFile(file, mountedPrefix ?? '');
+      addRoutes(allRoutes, routes);
     }
 
-    return [...allRoutes.values()].sort((a, b) => a.path.localeCompare(b.path));
+    if (mountPrefixesByFile.size > 0) {
+      const mountedRouteNames = new Map(
+        [...mountPrefixesByFile.entries()].map(([file, prefix]) => [routeLikeName(file), prefix]),
+      );
+
+      for (const file of sourceFiles) {
+        if (mountPrefixesByFile.has(file)) continue;
+
+        const inferredPrefix = mountedRouteNames.get(routeLikeName(file));
+        if (!inferredPrefix) continue;
+
+        addRoutes(allRoutes, resolveRoutesInFile(file, inferredPrefix));
+      }
+    }
+
+    return sortRoutes([...allRoutes.values()]);
   },
 };

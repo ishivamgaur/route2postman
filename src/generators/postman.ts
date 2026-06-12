@@ -191,13 +191,17 @@ function groupItemsByResource(items: InternalPostmanRequestItem[]): PostmanItem[
     folders.set(folderName, folderItems);
   }
 
-  return [
-    ...rootItems,
-    ...[...folders.entries()].map(([name, folderItems]) => ({
-      name,
-      item: folderItems,
-    })),
-  ];
+  const groupedItems: PostmanItem[] = [...rootItems];
+
+  for (const [name, folderItems] of folders.entries()) {
+    if (folderItems.length === 1) {
+      groupedItems.push(folderItems[0]);
+    } else {
+      groupedItems.push({ name, item: folderItems });
+    }
+  }
+
+  return groupedItems;
 }
 
 function toPostmanPath(routePath: string): string {

@@ -19,9 +19,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "start": "node dist/index.js",
+    "build": "node init && tsc",
+    "dev": "node init && tsc --watch",
+    "start": "node init && node dist/index.js",
     "pack:dry-run": "npm pack --dry-run",
     "prepublishOnly": "npm run build"
   },
@@ -39,7 +39,9 @@
   "dependencies": {
     "chalk": "^5.4.1",
     "commander": "^12.1.0",
+    "dotenv": "^8.2.0",
     "glob": "^11.0.1",
+    "node-fetch": "^3.3.2",
     "postman-collection": "^5.3.0"
   },
   "devDependencies": {

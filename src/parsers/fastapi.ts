@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { glob } from 'glob';
 import { RouteParser, RouteInfo } from '../types.js';
+import { DEFAULT_IGNORES, sortRoutes } from '../utils/project.js';
 import {
   type FieldInfo,
   enrichRoute,
@@ -21,7 +22,7 @@ export const fastapiParser: RouteParser = {
     const seen = new Set<string>();
     const routes: RouteInfo[] = [];
     const pattern = join(projectDir, '**/*.py').replace(/\\/g, '/');
-    const files = await glob(pattern);
+    const files = await glob(pattern, { ignore: DEFAULT_IGNORES });
 
     for (const file of files) {
       try {
@@ -45,7 +46,7 @@ export const fastapiParser: RouteParser = {
       } catch { /* ignore */ }
     }
 
-    return routes;
+    return sortRoutes(routes);
   },
 };
 
