@@ -1,6 +1,6 @@
 {
   "name": "route2postman",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Framework-agnostic CLI that auto-detects your project's API framework and generates a Postman collection from your route definitions.",
   "license": "MIT",
   "repository": {
