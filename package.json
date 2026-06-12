@@ -5,12 +5,28 @@
   "bin": {
     "route2postman": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
+    "pack:dry-run": "npm pack --dry-run",
     "prepublishOnly": "npm run build"
   },
+  "keywords": [
+    "postman",
+    "api",
+    "routes",
+    "express",
+    "fastapi",
+    "flask",
+    "django",
+    "hono",
+    "gin"
+  ],
   "dependencies": {
     "chalk": "^5.4.1",
     "commander": "^12.1.0",

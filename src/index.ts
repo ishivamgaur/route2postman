@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { resolve } from 'path';
+import { basename, resolve } from 'path';
 import { writeFileSync } from 'fs';
 import { detectFramework, getFrameworkByName, listSupportedFrameworks } from './detectors/index.js';
 import { generatePostmanCollection } from './generators/postman.js';
@@ -16,12 +16,13 @@ program
   .argument('[directory]', 'Project directory to scan', '.')
   .option('-o, --output <path>', 'Output file for the Postman collection')
   .option('--base-url <url>', 'Base URL for API requests', 'http://localhost:3000')
+  .option('-n, --name <name>', 'Postman collection name. Defaults to the scanned directory name')
   .option('-f, --framework <name>', `Force a framework parser (${supportedFrameworks.join(', ')})`)
   .option('--list-frameworks', 'Print supported frameworks and exit')
   .showHelpAfterError()
   .action(async (
     directory: string,
-    options: { output?: string; baseUrl: string; framework?: string; listFrameworks?: boolean },
+    options: { output?: string; baseUrl: string; name?: string; framework?: string; listFrameworks?: boolean },
   ) => {
     if (options.listFrameworks) {
       console.log(supportedFrameworks.join('\n'));
@@ -30,6 +31,7 @@ program
 
     const projectDir = resolve(directory);
     const outputFile = options.output || resolve(projectDir, 'postman_collection.json');
+    const collectionName = options.name?.trim() || basename(projectDir) || 'API Collection';
 
     console.log(`\n  Scanning: ${projectDir}\n`);
 
@@ -67,9 +69,10 @@ program
     }
     console.log();
 
-    const collection = generatePostmanCollection(routes, framework.name, options.baseUrl);
+    const collection = generatePostmanCollection(routes, framework.name, options.baseUrl, collectionName);
     writeFileSync(outputFile, collection, 'utf-8');
 
+    console.log(`  Collection name: ${collectionName}`);
     console.log(`  Postman collection saved to: ${outputFile}\n`);
   });
 

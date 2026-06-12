@@ -13,6 +13,7 @@ It is designed for developers who want a fast API testing collection without man
 - [Supported Frameworks](#supported-frameworks)
 - [Quick Start](#quick-start)
 - [CLI Usage](#cli-usage)
+- [Collection Naming](#collection-naming)
 - [Import Into Postman](#import-into-postman)
 - [Example](#example)
 - [Architecture](#architecture)
@@ -21,6 +22,7 @@ It is designed for developers who want a fast API testing collection without man
 - [How Route Inference Works](#how-route-inference-works)
 - [Core Data Model](#core-data-model)
 - [Development](#development)
+- [Publishing as an npm Package](#publishing-as-an-npm-package)
 - [Limitations](#limitations)
 - [Roadmap](#roadmap)
 
@@ -87,6 +89,8 @@ By default, the collection is written to:
 ../my-api/postman_collection.json
 ```
 
+The Postman collection name defaults to the scanned directory name. For example, scanning `../billing-api` creates a collection named `billing-api`.
+
 ## CLI Usage
 
 Scan the current directory:
@@ -113,6 +117,12 @@ Set the default Postman base URL:
 node dist/index.js ../my-api --base-url http://localhost:8000
 ```
 
+Set the Postman collection name:
+
+```bash
+node dist/index.js ../my-api --name "Billing API"
+```
+
 Force a specific framework parser:
 
 ```bash
@@ -130,6 +140,26 @@ After the package is published, the intended command will be:
 ```bash
 route2postman ../my-api
 ```
+
+## Collection Naming
+
+The generated Postman collection no longer uses a generic name like `Express.js API (auto-generated)` by default.
+
+Naming works like this:
+
+| Input | Collection Name |
+| --- | --- |
+| `node dist/index.js ../billing-api` | `billing-api` |
+| `node dist/index.js ../my-api --name "My API"` | `My API` |
+| `route2postman . --name "Local API"` | `Local API` |
+
+The output file still saves to the scanned project directory by default:
+
+```text
+<scanned-project>/postman_collection.json
+```
+
+Use `--output` only when you want to write the JSON somewhere else.
 
 ## Import Into Postman
 
@@ -532,6 +562,60 @@ Run against another backend:
 
 ```bash
 node dist/index.js ../my-api --base-url http://localhost:3000
+```
+
+## Publishing as an npm Package
+
+The package is configured with a CLI binary:
+
+```json
+{
+  "bin": {
+    "route2postman": "./dist/index.js"
+  }
+}
+```
+
+That means users can run this command after the package is installed:
+
+```bash
+route2postman ../my-api
+```
+
+Before publishing, build and inspect the package contents:
+
+```bash
+npm run build
+npm run pack:dry-run
+```
+
+The `files` field in `package.json` ensures the published package includes the compiled `dist` directory and the README.
+
+To test the CLI locally before publishing:
+
+```bash
+npm link
+route2postman . --name "route2postman"
+```
+
+To publish publicly:
+
+```bash
+npm login
+npm publish --access public
+```
+
+After publishing, users can install globally:
+
+```bash
+npm install -g route2postman
+route2postman ../my-api
+```
+
+Or run it without a global install:
+
+```bash
+npx route2postman ../my-api
 ```
 
 ## Adding a New Framework
