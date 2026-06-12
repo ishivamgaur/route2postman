@@ -197,43 +197,81 @@ The route is also placed inside a `Users` folder in the generated Postman collec
 
 ## Architecture
 
-`route2postman` uses a small pipeline architecture. Each stage has one clear responsibility.
+`route2postman` uses a pipeline architecture. The CLI coordinates the flow, framework-specific modules parse the backend code, and the generator produces a standard Postman collection.
 
-```text
-            Target backend project
-                     |
-                     v
-        +--------------------------+
-        | CLI entry point          |
-        | src/index.ts             |
-        +--------------------------+
-                     |
-                     v
-        +--------------------------+
-        | Framework detection      |
-        | src/detectors/*          |
-        +--------------------------+
-                     |
-                     v
-        +--------------------------+
-        | Framework route parser   |
-        | src/parsers/*            |
-        +--------------------------+
-                     |
-                     v
-        +--------------------------+
-        | Route inference          |
-        | src/utils/inference.ts   |
-        +--------------------------+
-                     |
-                     v
-        +--------------------------+
-        | Postman generator        |
-        | src/generators/postman.ts|
-        +--------------------------+
-                     |
-                     v
-          postman_collection.json
+```mermaid
+flowchart TD
+    A["Backend Project<br/>Express / FastAPI / Flask / Django / Hono / Gin"] --> B["CLI<br/>src/index.ts"]
+    B --> C{"Framework selected?"}
+    C -->|"--framework provided"| D["Use forced parser"]
+    C -->|"auto-detect"| E["Framework Detection<br/>src/detectors/*"]
+    E --> F["Best framework match<br/>confidence score"]
+    D --> G["Route Parser<br/>src/parsers/*"]
+    F --> G
+    G --> H["Normalized routes<br/>RouteInfo[]"]
+    H --> I["Route Inference<br/>src/utils/inference.ts"]
+    I --> J["Enriched routes<br/>params, query, body, headers, auth"]
+    J --> K["Postman Generator<br/>src/generators/postman.ts"]
+    K --> L["Postman Collection JSON<br/>postman_collection.json"]
+```
+
+### System Components
+
+```mermaid
+flowchart LR
+    subgraph CLI["CLI Layer"]
+        CLI_ENTRY["src/index.ts<br/>Options, scan path, output path"]
+    end
+
+    subgraph DETECTORS["Detection Layer"]
+        DETECTOR_INDEX["detectors/index.ts"]
+        EXPRESS_D["express.ts"]
+        FASTAPI_D["fastapi.ts"]
+        FLASK_D["flask.ts"]
+        DJANGO_D["django.ts"]
+        HONO_D["hono.ts"]
+        GIN_D["gin.ts"]
+    end
+
+    subgraph PARSERS["Parser Layer"]
+        EXPRESS_P["express.ts"]
+        FASTAPI_P["fastapi.ts"]
+        FLASK_P["flask.ts"]
+        DJANGO_P["django.ts"]
+        HONO_P["hono.ts"]
+        GIN_P["gin.ts"]
+    end
+
+    subgraph UTILS["Shared Utilities"]
+        PROJECT["utils/project.ts<br/>file scanning helpers"]
+        INFERENCE["utils/inference.ts<br/>request metadata inference"]
+    end
+
+    subgraph OUTPUT["Output Layer"]
+        POSTMAN["generators/postman.ts<br/>Postman Collection v2.1"]
+    end
+
+    CLI_ENTRY --> DETECTOR_INDEX
+    DETECTOR_INDEX --> EXPRESS_D
+    DETECTOR_INDEX --> FASTAPI_D
+    DETECTOR_INDEX --> FLASK_D
+    DETECTOR_INDEX --> DJANGO_D
+    DETECTOR_INDEX --> HONO_D
+    DETECTOR_INDEX --> GIN_D
+    DETECTOR_INDEX --> EXPRESS_P
+    DETECTOR_INDEX --> FASTAPI_P
+    DETECTOR_INDEX --> FLASK_P
+    DETECTOR_INDEX --> DJANGO_P
+    DETECTOR_INDEX --> HONO_P
+    DETECTOR_INDEX --> GIN_P
+    DETECTOR_INDEX --> PROJECT
+    EXPRESS_P --> INFERENCE
+    FASTAPI_P --> INFERENCE
+    FLASK_P --> INFERENCE
+    DJANGO_P --> INFERENCE
+    HONO_P --> INFERENCE
+    GIN_P --> INFERENCE
+    INFERENCE --> POSTMAN
 ```
 
 ### 1. CLI Layer
@@ -321,28 +359,39 @@ It handles:
 
 ## Data Flow
 
-The internal data flow looks like this:
+The internal data model becomes richer as it moves through the pipeline:
 
-```text
-Backend source files
-        |
-        v
-FrameworkDetector.detect(projectDir)
-        |
-        v
-RouteParser.parse(projectDir)
-        |
-        v
-RouteInfo[]
-        |
-        v
-generatePostmanCollection(routes, frameworkName, baseUrl)
-        |
-        v
-Postman Collection JSON
+```mermaid
+flowchart TD
+    A["Source files<br/>package.json, routes.ts, main.py, urls.py, go.mod"] --> B["Detection result<br/>{ name, confidence, parser }"]
+    B --> C["Raw route match<br/>method + framework path"]
+    C --> D["RouteInfo<br/>method, path, name"]
+    D --> E["Enriched RouteInfo<br/>params, queryParams, body, headers, auth"]
+    E --> F["Postman request item<br/>URL, variables, headers, body"]
+    F --> G["Postman folder grouping<br/>Users, Posts, Auth, etc."]
+    G --> H["Collection variables<br/>base_url, token, api_key"]
+    H --> I["Postman Collection v2.1 JSON"]
 ```
 
 The important design decision is that every parser returns the same `RouteInfo` interface. This allows new frameworks to be added without changing the Postman generator.
+
+### Route Enrichment Flow
+
+```mermaid
+flowchart LR
+    A["Handler source"] --> B["Path params<br/>:id, {id}, <int:id>"]
+    A --> C["Query params<br/>req.query.page<br/>request.args.get"]
+    A --> D["Body fields<br/>req.body.email<br/>Pydantic BaseModel<br/>json tags"]
+    A --> E["Headers<br/>Authorization<br/>x-api-key"]
+    A --> F["Auth signals<br/>auth, jwt, token,<br/>Depends, middleware"]
+
+    B --> G["Enriched RouteInfo"]
+    C --> G
+    D --> G
+    E --> G
+    F --> G
+    G --> H["Postman request"]
+```
 
 ## Project Structure
 
