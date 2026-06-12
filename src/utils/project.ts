@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { glob } from 'glob';
 
-const DEFAULT_IGNORES = [
+export const DEFAULT_IGNORES = [
   '**/node_modules/**',
   '**/dist/**',
   '**/build/**',
@@ -70,6 +70,10 @@ export async function projectContains(projectDir: string, pattern: string, patte
   }
 
   return false;
+}
+
+export function sortRoutes<T extends { method: string; path: string }>(routes: T[]): T[] {
+  return routes.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
 }
 
 function matchesAny(content: string, patterns: RegExp[]): boolean {

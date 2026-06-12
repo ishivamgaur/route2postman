@@ -3,15 +3,17 @@ import { join } from 'path';
 import { glob } from 'glob';
 import { RouteParser, RouteInfo } from '../types.js';
 import { enrichRoute, inferFlaskEnrichment } from '../utils/inference.js';
+import { DEFAULT_IGNORES, sortRoutes } from '../utils/project.js';
 
 const ROUTE_PATTERN = /@(?:app|bp|blueprint)\.route\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*methods\s*=\s*\[([^\]]*)\])?/gi;
 
 export const flaskParser: RouteParser = {
   name: 'Flask',
   async parse(projectDir: string): Promise<RouteInfo[]> {
+    const seen = new Set<string>();
     const routes: RouteInfo[] = [];
     const pattern = join(projectDir, '**/*.py').replace(/\\/g, '/');
-    const files = await glob(pattern);
+    const files = await glob(pattern, { ignore: DEFAULT_IGNORES });
 
     for (const file of files) {
       try {
@@ -37,9 +39,13 @@ export const flaskParser: RouteParser = {
           }
 
           for (const method of methods) {
+            const key = `${method.toUpperCase()}:${path}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
             const handlerSource = extractPythonFunctionAfter(content, match.index);
             routes.push(enrichRoute(
-              { method, path },
+              { method: method.toUpperCase(), path },
               inferFlaskEnrichment(handlerSource),
             ));
           }
@@ -47,7 +53,7 @@ export const flaskParser: RouteParser = {
       } catch { /* ignore */ }
     }
 
-    return routes;
+    return sortRoutes(routes);
   },
 };
 
