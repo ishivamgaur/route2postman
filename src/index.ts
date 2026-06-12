@@ -88,7 +88,7 @@ program
         console.log(`  Detected: ${framework.name} (confidence: ${framework.confidence}%)\n`);
       }
 
-      const groupingMode = options.grouping ?? config.grouping ?? 'path';
+      const groupingMode = options.grouping ?? config.grouping ?? 'smart';
       const routes = assignRouteGroups(await framework.parser.parse(projectDir), {
         customGroups: config.groups,
         mode: groupingMode,

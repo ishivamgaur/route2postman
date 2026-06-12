@@ -175,8 +175,8 @@ Grouping modes:
 
 | Mode | Behavior |
 | --- | --- |
-| `path` | Default. Groups by the first path segment, such as `/users` -> `Users`. Custom config groups still apply first. |
-| `smart` | Uses custom groups first, then groups by the first meaningful path segment. For example, `/api/v1/users` -> `Users`. |
+| `smart` | Default. Uses custom groups first, then groups by the first meaningful path segment. For example, `/api/v1/users` -> `Users`. |
+| `path` | Groups by the first path segment, such as `/api/users` -> `Api`. Custom config groups still apply first. |
 | `none` | Does not create folders. Requests are written at the collection root. |
 
 Custom groups are useful because every project names routes differently. For example:

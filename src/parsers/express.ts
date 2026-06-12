@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { glob } from 'glob';
 import { RouteParser, RouteInfo } from '../types.js';
-import { enrichRoute, extractCallExpression, inferExpressLikeEnrichment } from '../utils/inference.js';
+import { enrichRoute, extractCallExpression, inferExpressLikeEnrichment, splitTopLevel } from '../utils/inference.js';
 
 function findEntryFile(projectDir: string): string | null {
   const pkgPath = join(projectDir, 'package.json');
@@ -25,28 +25,48 @@ function findEntryFile(projectDir: string): string | null {
 function parseImports(content: string, entryDir: string): Map<string, string> {
   const imports = new Map<string, string>();
 
-  const esmPattern = /import\s+(?:\{\s*[^}]*\s*\})?\s*(\w+)\s+from\s+['"]([^'"]+)['"]/g;
+  const namedEsmPattern = /import\s+\{\s*([^}]+)\s*}\s+from\s+['"]([^'"]+)['"]/g;
   let match;
+  while ((match = namedEsmPattern.exec(content)) !== null) {
+    const modulePath = resolveImportPath(entryDir, match[2]);
+    if (!modulePath) continue;
+
+    for (const specifier of splitTopLevel(match[1])) {
+      const [importedName, localName] = specifier.split(/\s+as\s+/).map(part => part.trim());
+      imports.set(localName || importedName, modulePath);
+    }
+  }
+
+  const esmPattern = /import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
   while ((match = esmPattern.exec(content)) !== null) {
     const varName = match[1];
-    let modulePath = match[2];
-    if (modulePath.startsWith('.')) {
-      modulePath = resolveModulePath(entryDir, modulePath);
-      imports.set(varName, modulePath);
-    }
+    const modulePath = resolveImportPath(entryDir, match[2]);
+    if (modulePath) imports.set(varName, modulePath);
   }
 
   const cjsPattern = /(?:const|let|var)\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
   while ((match = cjsPattern.exec(content)) !== null) {
     const varName = match[1];
-    let modulePath = match[2];
-    if (modulePath.startsWith('.')) {
-      modulePath = resolveModulePath(entryDir, modulePath);
-      imports.set(varName, modulePath);
+    const modulePath = resolveImportPath(entryDir, match[2]);
+    if (modulePath) imports.set(varName, modulePath);
+  }
+
+  const destructuredCjsPattern = /(?:const|let|var)\s+\{\s*([^}]+)\s*}\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  while ((match = destructuredCjsPattern.exec(content)) !== null) {
+    const modulePath = resolveImportPath(entryDir, match[2]);
+    if (!modulePath) continue;
+
+    for (const specifier of splitTopLevel(match[1])) {
+      const [importedName, localName] = specifier.split(/\s*:\s*/).map(part => part.trim());
+      imports.set(localName || importedName, modulePath);
     }
   }
 
   return imports;
+}
+
+function resolveImportPath(baseDir: string, modulePath: string): string | null {
+  return modulePath.startsWith('.') ? resolveModulePath(baseDir, modulePath) : null;
 }
 
 function resolveModulePath(baseDir: string, modulePath: string): string {
@@ -82,6 +102,7 @@ function resolveRoutesInFile(filePath: string, basePath: string): RouteInfo[] {
   const routes: RouteInfo[] = [];
   try {
     const content = readFileSync(filePath, 'utf-8');
+    const imports = parseImports(content, dirname(filePath));
     const routePattern = /(?:app|router|route)\.(get|post|put|delete|patch|options|head)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
     while ((match = routePattern.exec(content)) !== null) {
@@ -97,14 +118,82 @@ function resolveRoutesInFile(filePath: string, basePath: string): RouteInfo[] {
       if (!seen.has(key)) {
         seen.add(key);
         const callSource = extractCallExpression(content, match.index);
+        const handlerSource = resolveHandlerSources(content, imports, callSource);
         routes.push(enrichRoute(
           { method, path: fullPath },
-          inferExpressLikeEnrichment(callSource),
+          inferExpressLikeEnrichment(`${callSource}\n${handlerSource}`),
         ));
       }
     }
   } catch { /* ignore */ }
   return routes;
+}
+
+function resolveHandlerSources(content: string, imports: Map<string, string>, callSource: string): string {
+  const sources: string[] = [];
+  const handlerRefs = extractHandlerReferences(callSource);
+
+  for (const handlerRef of handlerRefs) {
+    const [objectName, memberName] = handlerRef.split('.');
+    const importedFile = imports.get(objectName);
+
+    if (memberName && importedFile && existsSync(importedFile)) {
+      const importedContent = readFileSync(importedFile, 'utf-8');
+      const source = findFunctionSource(importedContent, memberName);
+      if (source) sources.push(source);
+      continue;
+    }
+
+    const localSource = findFunctionSource(content, objectName);
+    if (localSource) {
+      sources.push(localSource);
+      continue;
+    }
+
+    if (importedFile && existsSync(importedFile)) {
+      const importedContent = readFileSync(importedFile, 'utf-8');
+      const source = findFunctionSource(importedContent, objectName) ?? importedContent;
+      sources.push(source);
+    }
+  }
+
+  return sources.join('\n');
+}
+
+function extractHandlerReferences(callSource: string): string[] {
+  const args = splitTopLevel(callSource.slice(callSource.indexOf('(') + 1, callSource.lastIndexOf(')')));
+  const handlerArgs = args.slice(1).join(',');
+  const refs = new Set<string>();
+  const refPattern = /\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\b/g;
+  const ignored = new Set(['req', 'res', 'next', 'async', 'function', 'return', 'true', 'false', 'null', 'undefined']);
+
+  let match;
+  while ((match = refPattern.exec(handlerArgs)) !== null) {
+    const ref = match[1];
+    const root = ref.split('.')[0];
+    if (!ignored.has(root) && !ref.startsWith('req.') && !ref.startsWith('res.')) refs.add(ref);
+  }
+
+  return [...refs];
+}
+
+function findFunctionSource(content: string, functionName: string): string | null {
+  const patterns = [
+    new RegExp(`(?:export\\s+)?(?:async\\s+)?function\\s+${escapeRegExp(functionName)}\\s*\\(`),
+    new RegExp(`(?:export\\s+)?(?:const|let|var)\\s+${escapeRegExp(functionName)}\\s*=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*=>`),
+    new RegExp(`(?:exports|module\\.exports)\\.${escapeRegExp(functionName)}\\s*=\\s*(?:async\\s*)?(?:function\\s*)?\\(?`),
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(content);
+    if (match) return content.slice(match.index, match.index + 3000);
+  }
+
+  return null;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function normalizePath(base: string, rel: string): string {

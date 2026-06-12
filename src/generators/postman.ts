@@ -114,7 +114,7 @@ export function generatePostmanCollection(
     }
 
     requestItems.push({
-      name: route.name || `${route.method} ${route.path}`,
+      name: route.name || route.path,
       request,
       groupName: route.group,
     });
