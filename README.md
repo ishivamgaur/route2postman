@@ -124,7 +124,12 @@ Body:
 
 ## Import Into Postman
 
-1. Run `route2postman`.
+1. Generate the collection:
+
+```bash
+route2postman .
+```
+
 2. Open Postman.
 3. Click `Import`.
 4. Select `postman_collection.json`.
