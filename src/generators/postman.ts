@@ -44,6 +44,10 @@ interface PostmanRequestItem {
   };
 }
 
+interface InternalPostmanRequestItem extends PostmanRequestItem {
+  groupName?: string | null;
+}
+
 interface PostmanFolderItem {
   name: string;
   item: PostmanRequestItem[];
@@ -57,7 +61,7 @@ export function generatePostmanCollection(
   baseUrl: string = 'http://localhost:3000',
   collectionName: string = `${frameworkName} API`
 ): string {
-  const requestItems: PostmanRequestItem[] = [];
+  const requestItems: InternalPostmanRequestItem[] = [];
 
   for (const route of routes) {
     const postmanPath = toPostmanPath(route.path);
@@ -112,6 +116,7 @@ export function generatePostmanCollection(
     requestItems.push({
       name: route.name || `${route.method} ${route.path}`,
       request,
+      groupName: route.group,
     });
   }
 
@@ -162,20 +167,27 @@ function buildCollectionVariables(routes: RouteInfo[], baseUrl: string): Postman
   return [...variables.values()];
 }
 
-function groupItemsByResource(items: PostmanRequestItem[]): PostmanItem[] {
+function groupItemsByResource(items: InternalPostmanRequestItem[]): PostmanItem[] {
   const folders = new Map<string, PostmanRequestItem[]>();
   const rootItems: PostmanRequestItem[] = [];
 
   for (const item of items) {
-    const rawPath = item.request.url.path?.[0];
-    if (!rawPath) {
-      rootItems.push(item);
+    const { groupName, ...requestItem } = item;
+    if (groupName === null) {
+      rootItems.push(requestItem);
       continue;
     }
 
-    const folderName = titleCase(rawPath.replace(/^:/, 'params'));
+    const rawPath = item.request.url.path?.[0];
+    const folderName = groupName ?? (rawPath ? titleCase(rawPath.replace(/^:/, 'params')) : null);
+
+    if (!folderName) {
+      rootItems.push(requestItem);
+      continue;
+    }
+
     const folderItems = folders.get(folderName) ?? [];
-    folderItems.push(item);
+    folderItems.push(requestItem);
     folders.set(folderName, folderItems);
   }
 

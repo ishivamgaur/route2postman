@@ -67,6 +67,14 @@ Force a framework:
 route2postman ../my-api --framework FastAPI
 ```
 
+Choose folder grouping:
+
+```bash
+route2postman ../my-api --grouping path
+route2postman ../my-api --grouping smart
+route2postman ../my-api --grouping none
+```
+
 Use guided prompts:
 
 ```bash
@@ -84,7 +92,7 @@ route2postman --list-frameworks
 The generated Postman collection can include:
 
 - Route method and path
-- Postman folders by resource
+- Postman folders by path, custom config, or smart grouping
 - `base_url` collection variable
 - Path variables like `:id`
 - Query params
@@ -122,6 +130,68 @@ Body:
 4. Select `postman_collection.json`.
 5. Open the collection variables.
 6. Set values like `base_url`, `token`, or `api_key`.
+
+## Project Config
+
+Use a config file when you do not want to type the same options every time, or when your team wants consistent Postman folder names.
+
+Create `route2postman.config.json` in your backend project:
+
+```json
+{
+  "collectionName": "Billing API",
+  "baseUrl": "http://localhost:8000",
+  "output": "billing.postman_collection.json",
+  "framework": "Express.js",
+  "grouping": "path",
+  "groups": {
+    "Auth": ["/login", "/register", "/logout", "/refresh-token"],
+    "Users": ["/users", "/profile", "/me"],
+    "Admin": ["/admin/*"]
+  }
+}
+```
+
+Then run:
+
+```bash
+route2postman .
+```
+
+CLI flags override config values.
+
+Config options:
+
+| Option | What it does |
+| --- | --- |
+| `collectionName` | Name shown inside Postman. |
+| `baseUrl` | Value for the `{{base_url}}` collection variable. |
+| `output` | Where to save the generated collection JSON. |
+| `framework` | Force a parser, useful when auto-detection is unsure. |
+| `grouping` | Folder mode: `path`, `smart`, or `none`. |
+| `groups` | Your custom folder rules. These always run before automatic grouping. |
+
+Grouping modes:
+
+| Mode | Behavior |
+| --- | --- |
+| `path` | Default. Groups by the first path segment, such as `/users` -> `Users`. Custom config groups still apply first. |
+| `smart` | Uses custom groups first, then groups by the first meaningful path segment. For example, `/api/v1/users` -> `Users`. |
+| `none` | Does not create folders. Requests are written at the collection root. |
+
+Custom groups are useful because every project names routes differently. For example:
+
+```json
+{
+  "groups": {
+    "Identity": ["/login", "/signup", "/sessions/*"],
+    "Customers": ["/clients", "/customers", "/accounts/:id"],
+    "Internal Tools": ["/internal/*", "/admin/*"]
+  }
+}
+```
+
+This keeps the tool flexible instead of forcing fixed folder names.
 
 ## Supported Frameworks
 

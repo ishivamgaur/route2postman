@@ -8,6 +8,7 @@ export interface RouteInfo {
   body?: unknown;
   headers?: Record<string, string>;
   auth?: boolean;
+  group?: string | null;
 }
 
 export interface FrameworkDetector {

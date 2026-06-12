@@ -8,6 +8,8 @@ import { writeFileSync } from 'fs';
 import { detectFramework, getFrameworkByName, listSupportedFrameworks } from './detectors/index.js';
 import { generatePostmanCollection } from './generators/postman.js';
 import { detectBaseUrl } from './utils/base-url.js';
+import { loadRoute2PostmanConfig } from './utils/config.js';
+import { assignRouteGroups, type RouteGroupingMode } from './utils/grouping.js';
 
 const program = new Command();
 const supportedFrameworks = listSupportedFrameworks();
@@ -21,6 +23,7 @@ program
   .option('--base-url <url>', 'Override the detected base URL')
   .option('-n, --name <name>', 'Postman collection name. Defaults to the scanned directory name')
   .option('-f, --framework <name>', `Force a framework parser (${supportedFrameworks.join(', ')})`)
+  .option('--grouping <mode>', 'Folder grouping mode: path, smart, or none', parseGroupingMode)
   .option('-i, --interactive', 'Prompt for project directory, collection name, base URL, and output file')
   .option('--no-prompt', 'Disable prompts and use defaults for missing values')
   .option('--list-frameworks', 'Print supported frameworks and exit')
@@ -32,6 +35,7 @@ program
       baseUrl?: string;
       name?: string;
       framework?: string;
+      grouping?: RouteGroupingMode;
       interactive?: boolean;
       prompt?: boolean;
       listFrameworks?: boolean;
@@ -54,19 +58,23 @@ program
         ? await promptWithDefault(rl, 'Project directory to scan', directory ?? '.')
         : directory ?? '.';
       const projectDir = resolve(projectInput);
-      const defaultOutputFile = resolve(projectDir, 'postman_collection.json');
+      const config = loadRoute2PostmanConfig(projectDir);
+      const defaultOutputFile = config.output
+        ? resolveOutputPath(projectDir, config.output)
+        : resolve(projectDir, 'postman_collection.json');
       const detectedBaseUrl = await detectBaseUrl(projectDir);
-      const defaultBaseUrl = options.baseUrl ?? detectedBaseUrl;
+      const defaultBaseUrl = options.baseUrl ?? config.baseUrl ?? detectedBaseUrl;
 
       console.log(`\n  Scanning: ${projectDir}\n`);
 
-      const framework = options.framework
-        ? getFrameworkByName(options.framework)
+      const frameworkName = options.framework ?? config.framework;
+      const framework = frameworkName
+        ? getFrameworkByName(frameworkName)
         : await detectFramework(projectDir);
 
       if (!framework) {
-        const message = options.framework
-          ? `  Unsupported framework: ${options.framework}`
+        const message = frameworkName
+          ? `  Unsupported framework: ${frameworkName}`
           : '  No supported API framework detected.';
 
         console.log(message);
@@ -74,13 +82,17 @@ program
         process.exit(1);
       }
 
-      if (options.framework) {
+      if (frameworkName) {
         console.log(`  Using: ${framework.name} (forced)\n`);
       } else {
         console.log(`  Detected: ${framework.name} (confidence: ${framework.confidence}%)\n`);
       }
 
-      const routes = await framework.parser.parse(projectDir);
+      const groupingMode = options.grouping ?? config.grouping ?? 'path';
+      const routes = assignRouteGroups(await framework.parser.parse(projectDir), {
+        customGroups: config.groups,
+        mode: groupingMode,
+      });
 
       if (routes.length === 0) {
         console.log('  No routes found.\n');
@@ -95,7 +107,7 @@ program
       console.log();
 
       const defaultCollectionName = basename(projectDir) || 'API Collection';
-      const collectionName = options.name?.trim() || (shouldPromptForName
+      const collectionName = options.name?.trim() || config.collectionName || (shouldPromptForName
         ? await promptWithDefault(rl, 'Postman collection name', defaultCollectionName)
         : defaultCollectionName);
       const baseUrl = useInteractiveFlow
@@ -111,6 +123,7 @@ program
 
       console.log(`  Collection name: ${collectionName}`);
       console.log(`  Base URL: ${baseUrl}`);
+      console.log(`  Grouping: ${groupingMode}`);
       console.log(`  Postman collection saved to: ${outputFile}\n`);
     } finally {
       rl?.close();
@@ -144,4 +157,9 @@ async function promptWithDefault(rl: Interface | null, label: string, defaultVal
 
 function resolveOutputPath(projectDir: string, outputPath: string): string {
   return isAbsolute(outputPath) ? outputPath : resolve(projectDir, outputPath);
+}
+
+function parseGroupingMode(value: string): RouteGroupingMode {
+  if (value === 'path' || value === 'smart' || value === 'none') return value;
+  throw new Error('Grouping mode must be one of: path, smart, none');
 }
