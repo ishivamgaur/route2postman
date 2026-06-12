@@ -24,7 +24,7 @@ export const honoParser: RouteParser = {
           const callSource = extractCallExpression(content, match.index);
           routes.push(enrichRoute(
             { method, path },
-            inferHonoEnrichment(callSource, method),
+            inferHonoEnrichment(callSource),
           ));
         }
       } catch { /* ignore */ }

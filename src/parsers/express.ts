@@ -99,7 +99,7 @@ function resolveRoutesInFile(filePath: string, basePath: string): RouteInfo[] {
         const callSource = extractCallExpression(content, match.index);
         routes.push(enrichRoute(
           { method, path: fullPath },
-          inferExpressLikeEnrichment(callSource, method),
+          inferExpressLikeEnrichment(callSource),
         ));
       }
     }

@@ -98,7 +98,7 @@ function inferFastApiEnrichment(
     queryParams,
     headers: Object.keys(headers).length > 0 ? headers : undefined,
     auth: inferAuthFromText(handlerSource) || /Depends\s*\([^)]*(auth|user|token|jwt)/i.test(handlerSource),
-    body: body ?? (BODY_METHODS.has(method) ? sampleBodyFromFields([]) : undefined),
+    body,
   };
 }
 

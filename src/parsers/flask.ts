@@ -40,7 +40,7 @@ export const flaskParser: RouteParser = {
             const handlerSource = extractPythonFunctionAfter(content, match.index);
             routes.push(enrichRoute(
               { method, path },
-              inferFlaskEnrichment(handlerSource, method),
+              inferFlaskEnrichment(handlerSource),
             ));
           }
         }

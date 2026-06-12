@@ -24,7 +24,7 @@ export const ginParser: RouteParser = {
           const callSource = extractCallExpression(content, match.index);
           routes.push(enrichRoute(
             { method, path },
-            inferGinEnrichment(callSource, method),
+            inferGinEnrichment(callSource),
           ));
         }
       } catch { /* ignore */ }

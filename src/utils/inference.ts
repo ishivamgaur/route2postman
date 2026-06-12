@@ -15,12 +15,11 @@ export interface RouteEnrichment {
   description?: string;
 }
 
-const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
 const AUTH_HEADER_NAMES = new Set(['authorization', 'x-api-key', 'api-key']);
 
 export function enrichRoute(route: RouteInfo, enrichment: RouteEnrichment = {}): RouteInfo {
   const headers = { ...enrichment.headers };
-  const body = enrichment.body ?? createDefaultBody(route.method);
+  const body = enrichment.body;
   const auth = Boolean(enrichment.auth);
 
   if (body !== undefined && !hasHeader(headers, 'content-type')) {
@@ -65,7 +64,7 @@ export function inferAuthFromText(text: string): boolean {
     .test(text);
 }
 
-export function inferExpressLikeEnrichment(handlerSource: string, method: string): RouteEnrichment {
+export function inferExpressLikeEnrichment(handlerSource: string): RouteEnrichment {
   const bodyFields = [
     ...fieldsFromMemberAccess(handlerSource, /\breq\.body\.([A-Za-z_][A-Za-z0-9_]*)/g),
     ...fieldsFromStringAccess(handlerSource, /\breq\.body\[['"`]([^'"`]+)['"`]\]/g),
@@ -92,13 +91,13 @@ export function inferExpressLikeEnrichment(handlerSource: string, method: string
     queryParams,
     headers,
     auth: inferAuthFromText(handlerSource),
-    body: bodyFields.length > 0 || BODY_METHODS.has(method)
+    body: bodyFields.length > 0
       ? sampleBodyFromFields(bodyFields)
       : undefined,
   };
 }
 
-export function inferHonoEnrichment(handlerSource: string, method: string): RouteEnrichment {
+export function inferHonoEnrichment(handlerSource: string): RouteEnrichment {
   const bodyFields = fieldsFromDestructure(handlerSource, /\b(?:const|let|var)\s+\{([^}]+)}\s*=\s*await\s+c\.req\.json\s*\(\s*\)/g);
   const queryParams = [
     ...fieldsFromStringAccess(handlerSource, /\bc\.req\.query\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g),
@@ -114,13 +113,13 @@ export function inferHonoEnrichment(handlerSource: string, method: string): Rout
     queryParams,
     headers,
     auth: inferAuthFromText(handlerSource),
-    body: bodyFields.length > 0 || /\bc\.req\.json\s*\(/.test(handlerSource) || BODY_METHODS.has(method)
+    body: bodyFields.length > 0 || /\bc\.req\.json\s*\(/.test(handlerSource)
       ? sampleBodyFromFields(bodyFields)
       : undefined,
   };
 }
 
-export function inferFlaskEnrichment(handlerSource: string, method: string): RouteEnrichment {
+export function inferFlaskEnrichment(handlerSource: string): RouteEnrichment {
   const bodyFields = [
     ...fieldsFromStringAccess(handlerSource, /\brequest\.(?:json|form)\.get\s*\(\s*['"]([^'"]+)['"]/g),
     ...fieldsFromStringAccess(handlerSource, /\brequest\.get_json\s*\(\s*\)\.get\s*\(\s*['"]([^'"]+)['"]/g),
@@ -136,13 +135,13 @@ export function inferFlaskEnrichment(handlerSource: string, method: string): Rou
     queryParams,
     headers,
     auth: inferAuthFromText(handlerSource),
-    body: bodyFields.length > 0 || BODY_METHODS.has(method)
+    body: bodyFields.length > 0 || /\brequest\.(?:get_json|json|form)\b/.test(handlerSource)
       ? sampleBodyFromFields(bodyFields)
       : undefined,
   };
 }
 
-export function inferGinEnrichment(handlerSource: string, method: string): RouteEnrichment {
+export function inferGinEnrichment(handlerSource: string): RouteEnrichment {
   const queryParams = fieldsFromStringAccess(handlerSource, /\bc\.(?:Query|DefaultQuery)\s*\(\s*["`]([^"`]+)["`]/g);
   const params = fieldsFromStringAccess(handlerSource, /\bc\.Param\s*\(\s*["`]([^"`]+)["`]\s*\)/g);
   const headers = inferHeaders(handlerSource, [
@@ -156,7 +155,7 @@ export function inferGinEnrichment(handlerSource: string, method: string): Route
     queryParams,
     headers,
     auth: inferAuthFromText(handlerSource),
-    body: bodyFields.length > 0 || /ShouldBindJSON|BindJSON/.test(handlerSource) || BODY_METHODS.has(method)
+    body: bodyFields.length > 0 || /ShouldBindJSON|BindJSON/.test(handlerSource)
       ? sampleBodyFromFields(bodyFields)
       : undefined,
   };
@@ -258,10 +257,6 @@ export function splitTopLevel(value: string): string[] {
 
   if (current.trim()) parts.push(current.trim());
   return parts;
-}
-
-function createDefaultBody(method: string): Record<string, unknown> | undefined {
-  return BODY_METHODS.has(method) ? sampleBodyFromFields([]) : undefined;
 }
 
 function buildRouteDescription(route: RouteInfo, enrichment: RouteEnrichment): string {
